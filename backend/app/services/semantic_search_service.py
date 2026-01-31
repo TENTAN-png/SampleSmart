@@ -3,7 +3,6 @@ Semantic Search Service for SmartCut AI
 FAISS-based vector indexing and intent-based retrieval.
 """
 import numpy as np
-import faiss
 import logging
 import pickle
 import os
@@ -12,6 +11,14 @@ from dataclasses import dataclass
 from app.services.intent_embedding_service import intent_embedding_service
 
 logger = logging.getLogger(__name__)
+
+# Optional ML imports
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+    logger.warning("FAISS not available. Using mock vector search.")
 
 
 @dataclass
@@ -30,7 +37,7 @@ class SearchResult:
 
 class SemanticSearchService:
     """
-    Vector-based semantic search using FAISS.
+    Vector-based semantic search using FAISS (or mock if unavailable).
     Indexes video moments and retrieves by intent similarity.
     """
     
@@ -39,7 +46,7 @@ class SemanticSearchService:
     
     def __init__(self):
         self.dimension = intent_embedding_service.EMBEDDING_DIM
-        self.index: Optional[faiss.IndexFlatIP] = None  # Inner product for cosine similarity
+        self.index: Any = None  # faiss.IndexFlatIP or MockIndex
         self.metadata: List[Dict] = []  # Parallel list of moment metadata
         self._load_or_create_index()
     
@@ -47,7 +54,7 @@ class SemanticSearchService:
         """Load existing index or create a new one."""
         os.makedirs("./storage", exist_ok=True)
         
-        if os.path.exists(self.INDEX_PATH) and os.path.exists(self.METADATA_PATH):
+        if FAISS_AVAILABLE and os.path.exists(self.INDEX_PATH) and os.path.exists(self.METADATA_PATH):
             try:
                 self.index = faiss.read_index(self.INDEX_PATH)
                 with open(self.METADATA_PATH, "rb") as f:
@@ -60,18 +67,25 @@ class SemanticSearchService:
             self._create_new_index()
     
     def _create_new_index(self):
-        """Create a new FAISS index."""
-        self.index = faiss.IndexFlatIP(self.dimension)  # Cosine similarity via normalized vectors
+        """Create a new FAISS index (or mock)."""
+        if FAISS_AVAILABLE:
+            self.index = faiss.IndexFlatIP(self.dimension)
+        else:
+            # Mock index structure associated with metadata list
+            self.index = "MOCK_INDEX"
+            
         self.metadata = []
-        logger.info("Created new FAISS index")
+        logger.info(f"Created new {'FAISS' if FAISS_AVAILABLE else 'MOCK'} index")
     
     def save_index(self):
         """Persist index to disk."""
         os.makedirs("./storage", exist_ok=True)
-        faiss.write_index(self.index, self.INDEX_PATH)
+        if FAISS_AVAILABLE and self.index != "MOCK_INDEX":
+            faiss.write_index(self.index, self.INDEX_PATH)
+        
         with open(self.METADATA_PATH, "wb") as f:
             pickle.dump(self.metadata, f)
-        logger.info(f"Saved FAISS index with {self.index.ntotal} vectors")
+        logger.info(f"Saved index metadata with {len(self.metadata)} items")
     
     def index_moment(
         self,
@@ -87,27 +101,17 @@ class SemanticSearchService:
     ):
         """
         Add a moment's embedding to the index.
-        
-        Args:
-            moment_id: Unique ID for this moment
-            take_id: Parent take ID
-            start_time: Start timestamp in seconds
-            end_time: End timestamp in seconds
-            embedding: The intent embedding vector
-            transcript_snippet: What was said
-            emotion_label: Primary detected emotion
-            audio_features: Audio analysis data
-            timing_data: Pause/timing patterns
         """
         # Ensure normalized for cosine similarity
         embedding = embedding.astype(np.float32)
         if np.linalg.norm(embedding) > 0:
             embedding = embedding / np.linalg.norm(embedding)
         
-        # Add to FAISS
-        self.index.add(embedding.reshape(1, -1))
+        # Add to FAISS or Mock
+        if FAISS_AVAILABLE and self.index != "MOCK_INDEX":
+            self.index.add(embedding.reshape(1, -1))
         
-        # Store metadata
+        # Store metadata (acts as source of truth for mock mode too)
         self.metadata.append({
             "moment_id": moment_id,
             "take_id": take_id,
@@ -127,34 +131,38 @@ class SemanticSearchService:
     ) -> List[SearchResult]:
         """
         Search for moments matching the editor's intent query.
-        
-        Args:
-            query: Natural language search query
-            top_k: Number of results to return
-            filters: Optional filters (emotion, take_id, etc.)
-        
-        Returns:
-            List of SearchResult objects with explainability
         """
-        if self.index.ntotal == 0:
+        if not self.metadata:
             return []
-        
-        # Generate query embedding
-        query_embedding = intent_embedding_service.embed_query(query)
-        query_embedding = query_embedding.reshape(1, -1)
-        
+            
+        if FAISS_AVAILABLE and self.index != "MOCK_INDEX" and self.index.ntotal > 0:
+            # Generate query embedding
+            query_embedding = intent_embedding_service.embed_query(query)
+            query_embedding = query_embedding.reshape(1, -1)
+            
+             # Search FAISS
+            k = min(top_k * 3, self.index.ntotal)  # Over-fetch for filtering
+            scores, indices = self.index.search(query_embedding, k)
+            current_scores = scores[0]
+            current_indices = indices[0]
+        else:
+            # Mock results using metadata directly
+            import random
+            current_indices = list(range(len(self.metadata)))
+            random.shuffle(current_indices)
+            current_indices = current_indices[:min(top_k * 3, len(self.metadata))]
+            current_scores = [0.85 - (i * 0.05) for i in range(len(current_indices))] # Fake scores
+
         # Parse query intent for filtering and explainability
         parsed_intent = intent_embedding_service.parse_query_intent(query)
         
-        # Search FAISS
-        k = min(top_k * 3, self.index.ntotal)  # Over-fetch for filtering
-        scores, indices = self.index.search(query_embedding, k)
-        
         results = []
-        for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
+        for i, idx in enumerate(current_indices):
+            idx = int(idx)
             if idx < 0 or idx >= len(self.metadata):
                 continue
             
+            score = float(current_scores[i])
             meta = self.metadata[idx]
             
             # Apply filters
@@ -173,7 +181,7 @@ class SemanticSearchService:
                 moment_id=meta["moment_id"],
                 start_time=meta["start_time"],
                 end_time=meta["end_time"],
-                confidence=float(score),
+                confidence=score,
                 transcript_snippet=meta["transcript_snippet"],
                 emotion_label=meta["emotion_label"],
                 reasoning=reasoning

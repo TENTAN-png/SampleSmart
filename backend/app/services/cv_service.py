@@ -1,56 +1,78 @@
-import cv2
-import numpy as np
-import torch
-from ultralytics import YOLO
 import logging
 import os
 from typing import List, Dict, Any
 
-# Fix for PyTorch 2.6+ security update
+# Optional ML imports - may not be available in all environments
 try:
-    from ultralytics.nn.tasks import DetectionModel
-    import ultralytics.nn.modules.conv as conv_layers
-    import ultralytics.nn.modules.block as block_layers
-    import ultralytics.nn.modules.head as head_layers
-    import torch.nn as nn
-    torch.serialization.add_safe_globals([
-        DetectionModel,
-        conv_layers.Conv,
-        conv_layers.Concat,
-        block_layers.C2f,
-        block_layers.Bottleneck,
-        block_layers.DFL,
-        block_layers.SPPF,
-        nn.modules.container.Sequential,
-        nn.modules.container.ModuleList,
-        nn.modules.conv.Conv2d,
-        nn.modules.batchnorm.BatchNorm2d,
-        nn.modules.activation.SiLU,
-        nn.modules.pooling.MaxPool2d,
-        nn.modules.upsampling.Upsample,
-        head_layers.Detect
-    ])
+    import cv2
+    import numpy as np
+    CV2_AVAILABLE = True
 except ImportError:
-    pass
+    CV2_AVAILABLE = False
+
+try:
+    import torch
+    from ultralytics import YOLO
+    TORCH_AVAILABLE = True
+    
+    # Fix for PyTorch 2.6+ security update
+    try:
+        from ultralytics.nn.tasks import DetectionModel
+        import ultralytics.nn.modules.conv as conv_layers
+        import ultralytics.nn.modules.block as block_layers
+        import ultralytics.nn.modules.head as head_layers
+        import torch.nn as nn
+        torch.serialization.add_safe_globals([
+            DetectionModel,
+            conv_layers.Conv,
+            conv_layers.Concat,
+            block_layers.C2f,
+            block_layers.Bottleneck,
+            block_layers.DFL,
+            block_layers.SPPF,
+            nn.modules.container.Sequential,
+            nn.modules.container.ModuleList,
+            nn.modules.conv.Conv2d,
+            nn.modules.batchnorm.BatchNorm2d,
+            nn.modules.activation.SiLU,
+            nn.modules.pooling.MaxPool2d,
+            nn.modules.upsampling.Upsample,
+            head_layers.Detect
+        ])
+    except ImportError:
+        pass
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 class CVService:
     def __init__(self):
-        # In a real environment, weights would be pre-downloaded
-        # For this demo, we assume YOLOv8n (nano) for speed
-        try:
-            # We use a context manager to temporarily allow unsafe globals if needed, 
-            # or rely on the add_safe_globals above.
-            self.model = YOLO('yolov8n.pt') 
-        except Exception as e:
-            logger.warning(f"Failed to load YOLO model: {e}. Falling back to mock detection.")
-            self.model = None
+        self.model = None
+        if TORCH_AVAILABLE:
+            try:
+                self.model = YOLO('yolov8n.pt') 
+            except Exception as e:
+                logger.warning(f"Failed to load YOLO model: {e}. Using mock detection.")
+        else:
+            logger.info("PyTorch/YOLO not available. Using mock CV analysis.")
 
     async def analyze_video(self, video_path: str) -> Dict[str, Any]:
         """
         Samples frames and runs object detection/quality analysis.
+        Returns mock data when ML dependencies are not available.
         """
+        if not CV2_AVAILABLE:
+            logger.info("OpenCV not available, returning mock CV data")
+            return {
+                "duration": 120.0,
+                "objects": ["person", "chair", "table"],
+                "technical_score": 85.0,
+                "blur_score": 250.0,
+                "reasoning": "Mock analysis: simulated detection results (OpenCV not installed)",
+                "confidence": 0.7
+            }
+        
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video not found: {video_path}")
 
@@ -105,3 +127,4 @@ class CVService:
         }
 
 cv_service = CVService()
+

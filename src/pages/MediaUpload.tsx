@@ -30,6 +30,8 @@ interface UploadingFile {
     rawFile?: File;
 }
 
+import { api } from '../lib/api';
+
 export const MediaUpload = () => {
     const [files, setFiles] = useState<UploadingFile[]>([]);
     const uploadMedia = useProjectStore(state => state.uploadMedia);
@@ -41,6 +43,30 @@ export const MediaUpload = () => {
         if (['pdf', 'txt', 'fdx'].includes(ext || '')) return 'script';
         return 'other';
     }, []);
+
+    // Fetch existing media on mount
+    React.useEffect(() => {
+        const fetchMedia = async () => {
+            try {
+                const response = await api.media.listTakes();
+                const takes = response.data;
+                const mappedFiles: UploadingFile[] = takes.map((take: any) => ({
+                    id: take.id.toString(),
+                    name: take.file_name,
+                    size: take.file_size || 0,
+                    progress: 100,
+                    status: 'completed',
+                    type: getFileType(take.file_name)
+                }));
+                // Sort by ID descending (newest first)
+                mappedFiles.sort((a, b) => parseInt(b.id) - parseInt(a.id));
+                setFiles(mappedFiles);
+            } catch (err) {
+                console.error("Failed to fetch media list", err);
+            }
+        };
+        fetchMedia();
+    }, [getFileType]);
 
     const onDrop = useCallback(async (acceptedFiles: File[]) => {
         const newFiles = acceptedFiles.map(file => ({
