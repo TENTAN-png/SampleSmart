@@ -94,6 +94,11 @@ class SemanticSearchService:
     
     def _load_visual_index(self):
         """Load or create visual index for CLIP embeddings."""
+        if not FAISS_AVAILABLE:
+            self.visual_index = "MOCK_INDEX"
+            logger.info("FAISS not available. Using mock visual index.")
+            return
+
         os.makedirs("./storage", exist_ok=True)
         
         # Try loading pre-built visual index
@@ -331,11 +336,22 @@ class SemanticSearchService:
             query: Natural language visual description (e.g., "close-up shot with red lighting")
             top_k: Number of results to return
             
-        Returns:
-            List of matching video paths with confidence scores
         """
-        if self.visual_index is None or self.visual_index.ntotal == 0:
+        if self.visual_index is None:
             logger.warning("Visual index is empty. Run Colab embedding generation first.")
+            return []
+            
+        if self.visual_index == "MOCK_INDEX":
+             # Return mock results
+            return [{
+                "video_path": "mock_video.mp4",
+                "confidence": 0.85, 
+                "confidence_percent": 85.0,
+                "match_type": "visual_clip_similarity (MOCK)"
+            }]
+            
+        if self.visual_index.ntotal == 0:
+            logger.warning("Visual index is empty.")
             return []
         
         # Generate CLIP text embedding for query

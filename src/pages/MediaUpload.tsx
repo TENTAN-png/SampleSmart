@@ -50,6 +50,10 @@ export const MediaUpload = () => {
             try {
                 const response = await api.media.listTakes();
                 const takes = response.data;
+                if (!Array.isArray(takes)) {
+                    console.error("Expected array of takes, got:", takes);
+                    return;
+                }
                 const mappedFiles: UploadingFile[] = takes.map((take: any) => ({
                     id: take.id.toString(),
                     name: take.file_name,
