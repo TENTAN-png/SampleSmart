@@ -1,60 +1,98 @@
-# SmartCut AI Setup & Run Guide
+# 🎬 Semantic Video Search Engine (Hackathon 2026)
 
-Follow these steps to get the full-stack SmartCut AI platform running on your local machine.
+> **Team Coordination & Setup Guide**
 
-## 🚀 Prerequisites
-- **Python 3.10+**
-- **Node.js (v18+) & npm**
-- **PostgreSQL** (Ensure a database is created and the connection string in `backend/.env` is updated)
+This repository contains the source code and notebooks for the **Semantic Footage Search Engine**, a tool that allows video editors to search for footage using natural language (intent) rather than keywords.
 
 ---
 
-## 🛠️ Backend Setup (FastAPI)
+## � Team Roles & Branch Strategy
 
-1. **Open a terminal** and navigate to the backend directory:
-   ```powershell
-   cd backend
-   ```
+We are working in parallel branches to move fast. **Do not push directly to `main` until the end.**
 
-2. **Create a virtual environment**:
-   ```powershell
-   python -m venv venv
-   ```
-
-3. **Activate the virtual environment**:
-   ```powershell
-   .\venv\Scripts\activate
-   ```
-
-4. **Install dependencies**:
-   ```powershell
-   pip install -r requirements.txt
-   ```
-
-5. **Run the Backend**:
-   ```powershell
-   uvicorn app.main:app --reload
-   ```
-   *The backend will be available at `http://localhost:8000`*
+| Role | Member | Branch Name | Responsibilities |
+| :--- | :--- | :--- | :--- |
+| **Member 1** | @VideoLead | `feature/video-processing` | Video download (`yt-dlp`) & Scene Splitting (`PySceneDetect`). Output: `.mp4` clips. |
+| **Member 2** | @AILead | `feature/embeddings` | CLIP Model integration. Output: `embeddings.npy`. |
+| **Member 3** | @SearchLead | `feature/vector-db` | FAISS Indexing & Search Logic. |
+| **Member 4** | **YOU (Frontend)** | `feature/frontend-ui` | Streamlit UI & Final Integration. |
 
 ---
 
-## 🎨 Frontend Setup (React)
+## 🛠️ Project Structure (Google Drive + Colab)
 
-1. **Open a SECOND terminal** and stay in the root project directory (`SampleSmartCUt`):
-   ```powershell
-   cd .. # (If you are still in the backend folder)
-   ```
+Since we are using **Google Colab** for GPUs, our "deployment" is actually a specific folder structure in Google Drive.
 
-2. **Run the Frontend**:
-   ```powershell
-   npm run dev
-   ```
-   *The frontend will be available at `http://localhost:5173`*
+**Shared Drive Path:**
+`/content/drive/MyDrive/HackathonProject/`
+
+**Folder Layout:**
+```text
+HackathonProject/
+├── videos/          # Raw full-length videos (Managed by Member 1)
+├── clips/           # Shortened clips (Output of Member 1)
+├── embeddings/      # .npy files (Output of Member 2)
+└── db/              # FAISS index files (Output of Member 3)
+```
 
 ---
 
-## 📝 Configuration Note
-Ensure your `backend/.env` and `src/lib/api.ts` are correctly configured:
-- `backend/.env` should contain your **DATABASE_URL**.
-- `src/lib/api.ts` is set to point to `http://localhost:8000/api/v1`.
+## 🚀 How to Run (For Each Member)
+
+### 🧑‍💻 Member 1: Video Processing
+1.  Checkout branch `feature/video-processing`.
+2.  Open your Colab Notebook.
+3.  Mount Drive.
+4.  Run the **Video Splitter Script** (see `colab_code/video_splitter.py`).
+5.  **Deliverable:** Ensure `HackathonProject/clips/` is full of small `.mp4` files.
+
+### 🧑‍🔬 Member 2: Embeddings
+1.  Checkout branch `feature/embeddings`.
+2.  Wait for Member 1 to generate at least a few clips.
+3.  Run the **Embedding Generator Script** (see `colab_code/embedding_gen.py`).
+4.  **Deliverable:** `video_embeddings.npy` and `video_paths.npy` in the `embeddings/` folder.
+
+### 🧑‍🚀 Member 3: Search Backend
+1.  Checkout branch `feature/vector-db`.
+2.  Write the search logic class.
+3.  Test searching against the `.npy` files provided by Member 2.
+
+### 🎨 Member 4 (YOU): Frontend UI
+1.  Checkout branch `feature/frontend-ui`.
+2.  Create/Edit `app.py`.
+3.  **Run in Colab:**
+    ```python
+    !npm install localtunnel
+    !streamlit run app.py &>/content/logs.txt & npx localtunnel --port 8501
+    ```
+4.  **Authentication:** The password for LocalTunnel is your Colab instance IP. Run this to get it:
+    ```python
+    import urllib
+    print(urllib.request.urlopen('https://ipv4.icanhazip.com').read().decode('utf8').strip("\n"))
+    ```
+
+---
+
+## 📥 Git Workflow
+
+1.  **Pull changes** often:
+    ```bash
+    git checkout your-branch
+    git pull origin main  # Get updates if any
+    ```
+2.  **Commit your Notebooks/Scripts**:
+    ```bash
+    git add .
+    git commit -m "Updated logic for X"
+    git push origin your-branch
+    ```
+3.  **Merge (Final Hour)**:
+    Create a Pull Request to merge all branches into `main` for the final submission.
+
+---
+
+## 🆘 Troubleshooting
+
+*   **"No Embeddings Found"**: Member 2 hasn't run their script yet.
+*   **"Streamlit Tunnel Crashed"**: Re-run the last cell in the UI notebook.
+*   **"Drive not mounted"**: Always run `drive.mount('/content/drive')` first!
