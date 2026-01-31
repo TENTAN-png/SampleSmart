@@ -20,12 +20,12 @@ interface ProjectState {
     };
 
     // Actions
-    timeline: any | null;
+    timeline: unknown | null;
     fetchProject: () => Promise<void>;
     fetchTimeline: () => Promise<void>;
-    getProcessingStatus: (takeId: number) => Promise<any>;
+    getProcessingStatus: (takeId: number) => Promise<unknown>;
     setProcessingProgress: (progress: number) => void;
-    uploadMedia: (file: File) => Promise<any>;
+    uploadMedia: (file: File) => Promise<unknown>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -59,8 +59,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
                 shootDate: new Date(project.created_at).toLocaleDateString(),
                 loading: false
             });
-        } catch (err: any) {
-            set({ error: err.message, loading: false });
+        } catch (err: unknown) {
+            set({ error: err instanceof Error ? err.message : 'Unknown error', loading: false });
         }
     },
 
@@ -69,8 +69,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         try {
             const response = await api.timeline.get();
             set({ timeline: response.data, loading: false });
-        } catch (err: any) {
-            set({ error: err.message, loading: false });
+        } catch (err: unknown) {
+            set({ error: err instanceof Error ? err.message : 'Unknown error', loading: false });
         }
     },
 
@@ -78,7 +78,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         try {
             const response = await api.processing.getStatus(takeId);
             return response.data;
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Failed to fetch processing status", err);
             return null;
         }
@@ -92,8 +92,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             const response = await api.media.upload(file);
             set({ loading: false });
             return response.data;
-        } catch (err: any) {
-            set({ error: err.message, loading: false });
+        } catch (err: unknown) {
+            set({ error: err instanceof Error ? err.message : 'Unknown error', loading: false });
             throw err;
         }
     }

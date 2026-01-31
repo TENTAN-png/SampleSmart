@@ -30,6 +30,20 @@ interface PipelineStage {
     logs: string[];
 }
 
+interface Take {
+    id: number;
+    file_name: string;
+    number: number;
+}
+
+interface ProcessingStatus {
+    stages: Record<string, 'pending' | 'processing' | 'completed' | 'error'>;
+    cv?: { confidence: number };
+    audio?: { confidence: number };
+    nlp?: { confidence: number };
+    logs?: string[];
+}
+
 const initialStages: PipelineStage[] = [
     {
         id: 'yolo',
@@ -89,16 +103,16 @@ const initialStages: PipelineStage[] = [
 
 export const AIMonitor = () => {
     const getProcessingStatus = useProjectStore(state => state.getProcessingStatus);
-    const [takes, setTakes] = useState<any[]>([]);
+    const [takes, setTakes] = useState<Take[]>([]);
     const [selectedTakeId, setSelectedTakeId] = useState<number | null>(null);
     const [activeStage, setActiveStage] = useState<string>('Frame & Data Analysis');
-    const [statusData, setStatusData] = useState<any>(null);
+    const [statusData, setStatusData] = useState<ProcessingStatus | null>(null);
     const [isPolling, setIsPolling] = useState(false);
 
     // Fetch takes on mount
     useEffect(() => {
         let isMounted = true;
-        let timeoutId: any;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
         const fetchTakes = async () => {
             if (!isMounted) return;
@@ -131,7 +145,7 @@ export const AIMonitor = () => {
         if (!selectedTakeId) return;
 
         let isMounted = true;
-        let timeoutId: any;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
         const poll = async () => {
             if (!isMounted) return;
@@ -140,7 +154,7 @@ export const AIMonitor = () => {
                 setIsPolling(true);
                 const data = await getProcessingStatus(selectedTakeId);
                 if (isMounted && data) {
-                    setStatusData(data);
+                    setStatusData(data as ProcessingStatus);
                 }
             } catch (err) {
                 console.error("Poll error", err);
@@ -161,9 +175,9 @@ export const AIMonitor = () => {
 
     // Map backend stages to UI components
     const stages: PipelineStage[] = [
-        { id: 'Frame & Data Analysis', name: 'Frame & Data Analysis', icon: Search, status: statusData?.stages?.['Frame & Data Analysis'] || 'pending', confidence: Math.round(statusData?.cv?.confidence * 100) || 0, duration: '12s', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('frame') || l.toLowerCase().includes('data')) || [] },
-        { id: 'Audio Processing', name: 'Audio Processing', icon: Mic2, status: statusData?.stages?.['Audio Processing'] || 'pending', confidence: Math.round(statusData?.audio?.confidence * 100) || 0, duration: 'Ongoing', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('audio')) || [] },
-        { id: 'Script Alignment', name: 'Script Alignment', icon: FileText, status: statusData?.stages?.['Script Alignment'] || 'pending', confidence: Math.round(statusData?.nlp?.confidence * 100) || 0, duration: '-', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('script') || l.toLowerCase().includes('align')) || [] },
+        { id: 'Frame & Data Analysis', name: 'Frame & Data Analysis', icon: Search, status: statusData?.stages?.['Frame & Data Analysis'] || 'pending', confidence: Math.round((statusData?.cv?.confidence ?? 0) * 100), duration: '12s', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('frame') || l.toLowerCase().includes('data')) || [] },
+        { id: 'Audio Processing', name: 'Audio Processing', icon: Mic2, status: statusData?.stages?.['Audio Processing'] || 'pending', confidence: Math.round((statusData?.audio?.confidence ?? 0) * 100), duration: 'Ongoing', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('audio')) || [] },
+        { id: 'Script Alignment', name: 'Script Alignment', icon: FileText, status: statusData?.stages?.['Script Alignment'] || 'pending', confidence: Math.round((statusData?.nlp?.confidence ?? 0) * 100), duration: '-', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('script') || l.toLowerCase().includes('align')) || [] },
         { id: 'Intelligence Scoring', name: 'Intelligence Scoring', icon: Activity, status: statusData?.stages?.['Intelligence Scoring'] || 'pending', confidence: 100, duration: '-', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('score') || l.toLowerCase().includes('intellig')) || [] },
         { id: 'Intent Indexing', name: 'Intent Indexing', icon: Zap, status: statusData?.stages?.['Intent Indexing'] || 'pending', confidence: 100, duration: '-', logs: statusData?.logs?.filter((l: string) => l.toLowerCase().includes('intent') || l.toLowerCase().includes('index')) || [] },
     ];
@@ -177,7 +191,7 @@ export const AIMonitor = () => {
             await api.processing.start(selectedTakeId);
             // Re-fetch status immediately
             const data = await getProcessingStatus(selectedTakeId);
-            if (data) setStatusData(data);
+            if (data) setStatusData(data as ProcessingStatus);
         } catch (err) {
             console.error("Failed to start processing", err);
         }

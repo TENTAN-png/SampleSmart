@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Search, Sparkles, Play, Clock, Brain, ChevronRight, ThumbsUp, ThumbsDown, Filter, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api } from '../lib/api';
+import { api, API_BASE_URL } from '../lib/api';
 
 interface SearchResult {
     result_id: number;
@@ -12,6 +12,7 @@ interface SearchResult {
     confidence: number;
     transcript_snippet: string;
     emotion_label: string;
+    video_url?: string;
     reasoning: {
         matched_because: string[];
         emotion_detected: string;
@@ -290,12 +291,22 @@ export const SemanticSearch: React.FC = () => {
                                         className="bg-editor-dark/50 backdrop-blur border border-white/10 rounded-xl p-6 hover:border-purple-500/30 transition-all group"
                                     >
                                         <div className="flex items-start gap-6">
-                                            {/* Thumbnail placeholder */}
-                                            <div className="w-48 h-28 bg-editor-darker rounded-lg flex items-center justify-center flex-shrink-0 relative overflow-hidden">
-                                                <Play className="w-8 h-8 text-white/50 group-hover:text-purple-400 transition-colors" />
-                                                <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-white">
-                                                    {formatTime(result.start_time)} - {formatTime(result.end_time)}
-                                                </div>
+                                            {/* Video Player */}
+                                            <div className="w-48 h-28 bg-editor-darker rounded-lg flex items-center justify-center flex-shrink-0 relative overflow-hidden group-hover:scale-105 transition-transform">
+                                                {result.video_url ? (
+                                                    <video
+                                                        src={`${API_BASE_URL.replace('/api/v1', '')}${result.video_url}`}
+                                                        controls
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="flex flex-col items-center justify-center">
+                                                        <Play className="w-8 h-8 text-white/50 group-hover:text-purple-400 transition-colors" />
+                                                        <div className="absolute bottom-2 right-2 bg-black/70 px-2 py-1 rounded text-xs text-white">
+                                                            {formatTime(result.start_time)} - {formatTime(result.end_time)}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Content */}

@@ -1,24 +1,49 @@
-import whisper
-import librosa
-import numpy as np
 import logging
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# Optional ML imports
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
+
+try:
+    import librosa
+    import numpy as np
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    LIBROSA_AVAILABLE = False
+
 class AudioService:
     def __init__(self):
-        try:
-            # Using 'base' model for demo speed/memory
-            self.model = whisper.load_model("base")
-        except Exception as e:
-            logger.warning(f"Failed to load Whisper model: {e}. Falling back to mock transcription.")
-            self.model = None
+        self.model = None
+        if WHISPER_AVAILABLE:
+            try:
+                self.model = whisper.load_model("base")
+            except Exception as e:
+                logger.warning(f"Failed to load Whisper model: {e}. Using mock transcription.")
+        else:
+            logger.info("Whisper not available. Using mock audio analysis.")
 
     async def analyze_audio(self, audio_path: str) -> Dict[str, Any]:
         """
         Transcribes audio and analyzes technical quality (SNR, clipping).
+        Returns mock data when ML dependencies are not available.
         """
+        # Return mock data if librosa not available
+        if not LIBROSA_AVAILABLE:
+            logger.info("Librosa not available, returning mock audio data")
+            return {
+                "transcript": "Mock transcript: Hello, this is a test dialogue.",
+                "quality_score": 85.0,
+                "duration": 30.0,
+                "reasoning": "Mock audio analysis (librosa not installed)",
+                "confidence": 0.7
+            }
+        
         # 1. Technical Analysis (librosa)
         try:
             y, sr = librosa.load(audio_path, sr=None)
@@ -65,3 +90,4 @@ class AudioService:
         }
 
 audio_service = AudioService()
+

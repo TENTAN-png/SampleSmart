@@ -76,13 +76,17 @@ export const Timeline = () => {
 
     const clips = React.useMemo(() => {
         if (!timeline) return [];
-        const allClips: any[] = [];
-        Object.keys(timeline.tracks).forEach(trackKey => {
-            timeline.tracks[trackKey].clips.forEach((clip: any) => {
+        const typedTimeline = timeline as {
+            tracks: Record<string, { type: 'video' | 'audio'; clips: Array<{ id: string; name: string; start: number; duration: number; score: number; reasoning: string }> }>
+        };
+        const allClips: TimelineClip[] = [];
+        Object.keys(typedTimeline.tracks).forEach(trackKey => {
+            typedTimeline.tracks[trackKey].clips.forEach((clip) => {
                 allClips.push({
                     ...clip,
-                    type: timeline.tracks[trackKey].type,
-                    color: timeline.tracks[trackKey].type === 'video' ? '#34d399' : '#60a5fa',
+                    type: typedTimeline.tracks[trackKey].type,
+                    color: typedTimeline.tracks[trackKey].type === 'video' ? '#34d399' : '#60a5fa',
+                    track: 0,
                     aiReasoning: [clip.reasoning]
                 });
             });
