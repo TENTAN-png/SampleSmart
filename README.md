@@ -91,6 +91,48 @@ HackathonProject/
 
 ---
 
+## 🧑‍🔬 Member 2: AI Engineer - Visual Embeddings
+
+Member 2 is responsible for generating CLIP-based visual embeddings for semantic video search.
+
+### Deliverables
+- **colab_code/embedding_gen.py**: CLIP embedding generator using `openai/clip-vit-b-32`
+- **colab_code/frame_extractor.py**: Frame extraction utilities (triple/single strategies)
+- **colab_code/audio_analysis.py**: Bonus audio analysis for silence detection
+- **colab_code/integration_test.py**: Validation tests for embeddings
+
+### Output Files
+| File | Shape | Description |
+|------|-------|-------------|
+| `video_embeddings.npy` | (N, 512) | CLIP visual embeddings, L2 normalized |
+| `video_paths.npy` | (N,) | Corresponding video clip paths |
+| `embedding_config.json` | - | Model configuration and stats |
+| `frame_metadata.json` | - | Per-clip extraction details |
+
+### Integration with Backend
+1. Copy embeddings to `backend/storage/`:
+   ```bash
+   cp embeddings/*.npy backend/storage/
+   ```
+2. Backend auto-loads embeddings into FAISS visual index on startup
+3. Visual search available via `semantic_search_service.search_by_visual_query()`
+
+### Quick Start (Colab)
+```python
+from embedding_gen import CLIPEmbeddingGenerator
+
+generator = CLIPEmbeddingGenerator(model_name="openai/clip-vit-b-32")
+stats = generator.batch_process_clips(
+    clips_dir="/content/drive/MyDrive/HackathonProject/clips",
+    output_dir="/content/drive/MyDrive/HackathonProject/embeddings",
+    strategy="triple"
+)
+```
+
+See **colab_code/README.md** for full documentation.
+
+---
+
 ## 🆘 Troubleshooting
 
 *   **"No Embeddings Found"**: Member 2 hasn't run their script yet.

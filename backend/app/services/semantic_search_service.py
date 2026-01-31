@@ -1,6 +1,7 @@
 """
 Semantic Search Service for SmartCut AI
 FAISS-based vector indexing and intent-based retrieval.
+Supports both intent-based (text) and visual (CLIP) similarity search.
 """
 import numpy as np
 import faiss
@@ -10,6 +11,7 @@ import os
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from app.services.intent_embedding_service import intent_embedding_service
+from app.services.visual_embedding_service import visual_embedding_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +34,29 @@ class SemanticSearchService:
     """
     Vector-based semantic search using FAISS.
     Indexes video moments and retrieves by intent similarity.
+    Supports visual (CLIP) search via integrated visual index.
     """
     
     INDEX_PATH = "./storage/faiss_index.bin"
     METADATA_PATH = "./storage/faiss_metadata.pkl"
     
+    # Visual index paths (for CLIP embeddings from Colab)
+    VISUAL_INDEX_PATH = "./storage/faiss_visual_index.bin"
+    VISUAL_EMBEDDINGS_PATH = "./storage/video_embeddings.npy"
+    VISUAL_PATHS_PATH = "./storage/video_paths.npy"
+    
     def __init__(self):
         self.dimension = intent_embedding_service.EMBEDDING_DIM
         self.index: Optional[faiss.IndexFlatIP] = None  # Inner product for cosine similarity
         self.metadata: List[Dict] = []  # Parallel list of moment metadata
+        
+        # Visual search components
+        self.visual_dimension = visual_embedding_service.EMBEDDING_DIM  # 512 for CLIP
+        self.visual_index: Optional[faiss.IndexFlatIP] = None
+        self.visual_paths: List[str] = []
+        
         self._load_or_create_index()
+        self._load_visual_index()
     
     def _load_or_create_index(self):
         """Load existing index or create a new one."""
@@ -64,6 +79,43 @@ class SemanticSearchService:
         self.index = faiss.IndexFlatIP(self.dimension)  # Cosine similarity via normalized vectors
         self.metadata = []
         logger.info("Created new FAISS index")
+    
+    def _load_visual_index(self):
+        """Load or create visual index for CLIP embeddings."""
+        os.makedirs("./storage", exist_ok=True)
+        
+        # Try loading pre-built visual index
+        if os.path.exists(self.VISUAL_INDEX_PATH):
+            try:
+                self.visual_index = faiss.read_index(self.VISUAL_INDEX_PATH)
+                if os.path.exists(self.VISUAL_PATHS_PATH):
+                    self.visual_paths = list(np.load(self.VISUAL_PATHS_PATH, allow_pickle=True))
+                logger.info(f"Loaded visual FAISS index with {self.visual_index.ntotal} vectors")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to load visual index: {e}")
+        
+        # Try building from embeddings file
+        if os.path.exists(self.VISUAL_EMBEDDINGS_PATH):
+            try:
+                embeddings = np.load(self.VISUAL_EMBEDDINGS_PATH)
+                if os.path.exists(self.VISUAL_PATHS_PATH):
+                    self.visual_paths = list(np.load(self.VISUAL_PATHS_PATH, allow_pickle=True))
+                
+                self.visual_index = faiss.IndexFlatIP(self.visual_dimension)
+                self.visual_index.add(embeddings.astype(np.float32))
+                logger.info(f"Built visual index from embeddings: {self.visual_index.ntotal} vectors")
+                
+                # Save the built index
+                faiss.write_index(self.visual_index, self.VISUAL_INDEX_PATH)
+                return
+            except Exception as e:
+                logger.warning(f"Failed to build visual index: {e}")
+        
+        # Create empty visual index
+        self.visual_index = faiss.IndexFlatIP(self.visual_dimension)
+        self.visual_paths = []
+        logger.info("Created empty visual index (no embeddings found)")
     
     def save_index(self):
         """Persist index to disk."""
@@ -258,6 +310,58 @@ class SemanticSearchService:
         
         partial_lower = partial_query.lower()
         return [s for s in suggestions if partial_lower in s.lower()][:5]
+    
+    def search_by_visual_query(
+        self,
+        query: str,
+        top_k: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for video clips by visual similarity using CLIP embeddings.
+        
+        Args:
+            query: Natural language visual description (e.g., "close-up shot with red lighting")
+            top_k: Number of results to return
+            
+        Returns:
+            List of matching video paths with confidence scores
+        """
+        if self.visual_index is None or self.visual_index.ntotal == 0:
+            logger.warning("Visual index is empty. Run Colab embedding generation first.")
+            return []
+        
+        # Generate CLIP text embedding for query
+        query_embedding = visual_embedding_service.embed_text_query(query)
+        query_embedding = query_embedding.reshape(1, -1).astype(np.float32)
+        
+        # Search visual FAISS index
+        k = min(top_k, self.visual_index.ntotal)
+        scores, indices = self.visual_index.search(query_embedding, k)
+        
+        results = []
+        for score, idx in zip(scores[0], indices[0]):
+            if idx < 0 or idx >= len(self.visual_paths):
+                continue
+            
+            results.append({
+                "video_path": self.visual_paths[idx],
+                "confidence": float(score),
+                "confidence_percent": round(float(score) * 100, 1),
+                "match_type": "visual_clip_similarity"
+            })
+        
+        return results
+    
+    def get_visual_index_stats(self) -> Dict[str, Any]:
+        """Get statistics about the visual index."""
+        return {
+            "visual_index_loaded": self.visual_index is not None,
+            "visual_vectors": self.visual_index.ntotal if self.visual_index else 0,
+            "visual_paths_count": len(self.visual_paths),
+            "visual_dimension": self.visual_dimension,
+            "intent_index_vectors": self.index.ntotal if self.index else 0,
+            "intent_dimension": self.dimension
+        }
     
     def clear_index(self):
         """Clear all indexed data."""
