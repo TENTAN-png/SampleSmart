@@ -11,6 +11,7 @@ from app.services.nlp_service import nlp_service
 from app.services.scoring_service import scoring_service
 from app.services.intent_embedding_service import intent_embedding_service
 from app.services.semantic_search_service import semantic_search_service
+from sqlalchemy.orm.attributes import flag_modified
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +33,57 @@ class ProcessingOrchestrator:
         self._progress: Dict[int, Dict[str, Any]] = {}
 
     async def get_status(self, take_id: int) -> Dict[str, Any]:
-        return self._progress.get(take_id, {"status": "unknown", "progress": 0})
+        take_id = int(take_id)
+        # Return live progress if currently processing
+        if take_id in self._progress:
+            logger.info(f"Returning live status for take {take_id}")
+            return self._progress[take_id]
+        
+        # Otherwise, try to load final result from database
+        db = SessionLocal()
+        try:
+            take = db.query(models.Take).get(take_id)
+            if not take:
+                return {"status": "not_found", "progress": 0}
+            
+            # If it has metadata, it's completed
+            if take.ai_metadata:
+                return {
+                    "status": "completed",
+                    "progress": 100,
+                    "stages": {
+                        "Frame & Data Analysis": "completed",
+                        "Audio Processing": "completed",
+                        "Script Alignment": "completed",
+                        "Intelligence Scoring": "completed",
+                        "Intent Indexing": "completed"
+                    },
+                    "cv": take.ai_metadata.get("cv", {}),
+                    "audio": take.ai_metadata.get("audio", {}),
+                    "nlp": take.ai_metadata.get("nlp", {}),
+                    "logs": [
+                        "Task loaded from database storage.",
+                        f"Previous analysis for Take {take_id} restored."
+                    ]
+                }
+            
+            return {"status": "pending", "progress": 0}
+        finally:
+            db.close()
 
     async def process_take(self, take_id: int):
+        take_id = int(take_id)
+        # Prevent parallel processing of the same take
+        if take_id in self._progress and self._progress[take_id]["status"] == "processing":
+            logger.warning(f"Take {take_id} is already being processed. Skipping.")
+            return
+
         self._progress[take_id] = {
             "status": "processing",
             "progress": 0,
             "current_stage": None,
             "stages": {s.name: "pending" for s in self.stages},
-            "logs": []
+            "logs": [f"Initiating processing for Take {take_id}"]
         }
         
         db = SessionLocal()
@@ -61,7 +104,7 @@ class ProcessingOrchestrator:
             for stage in self.stages:
                 self._progress[take_id]["current_stage"] = stage.name
                 self._progress[take_id]["stages"][stage.name] = "running"
-                self._progress[take_id]["logs"].append(f"Starting {stage.name}...")
+                self._progress[take_id]["logs"].append(f"[{take_id}] Starting {stage.name}...")
                 
                 # Execute stage logic
                 if stage.name == "Script Alignment":
@@ -117,21 +160,30 @@ class ProcessingOrchestrator:
             context.get("audio", {}),
             context.get("nlp", {})
         )
-        take.confidence_score = res["total_score"]
-        take.ai_reasoning["summary"] = res["summary"]
-        take.ai_metadata["score_breakdown"] = res["breakdown"]
+        
+        # Finalize results
+        take.confidence_score = res.get("total_score", 0)
+        take.ai_reasoning["summary"] = res.get("summary", "")
+        take.ai_reasoning["breakdown"] = res.get("breakdown", {})
+        take.ai_metadata["score_breakdown"] = res.get("breakdown", {})
+        
+        # Ensure SQLAlchemy detects the change in JSON fields
+        flag_modified(take, "ai_metadata")
+        flag_modified(take, "ai_reasoning")
+        
+        db.commit()
         return res
 
     async def _run_intent_indexing(self, take: models.Take, db, context):
         """Generate intent embeddings for semantic search."""
-        self._progress[take.id]["logs"].append(f"Starting Intent Indexing for Take {take.id}...")
+        self._progress[take.id]["logs"].append(f"[{take.id}] Starting Intent Indexing...")
         try:
             # Extract data from context
             transcript = context.get("transcript", "")
             cv_data = context.get("cv", {})
             audio_data = context.get("audio", {})
             
-            self._progress[take.id]["logs"].append("Building multimodal context description...")
+            self._progress[take.id]["logs"].append(f"[{take.id}] Building multimodal context description...")
             
             # Determine emotion from CV analysis
             emotion_label = "neutral"
@@ -152,8 +204,8 @@ class ProcessingOrchestrator:
                 "reaction_delay": 0
             }
             
-            self._progress[take.id]["logs"].append(f"Detected primary intent: {emotion_label}")
-            self._progress[take.id]["logs"].append("Generating semantic embedding vectors...")
+            self._progress[take.id]["logs"].append(f"[{take.id}] Detected primary intent: {emotion_label}")
+            self._progress[take.id]["logs"].append(f"[{take.id}] Generating semantic embedding vectors...")
             
             # Generate embedding for the entire take as a single moment
             embedding = intent_embedding_service.generate_moment_embedding(
@@ -164,8 +216,8 @@ class ProcessingOrchestrator:
                 script_context=""
             )
             
-            self._progress[take.id]["logs"].append("Moment embedding generated successfully.")
-            self._progress[take.id]["logs"].append("Adding moment to FAISS similarity index...")
+            self._progress[take.id]["logs"].append(f"[{take.id}] Moment embedding generated successfully.")
+            self._progress[take.id]["logs"].append(f"[{take.id}] Adding moment to FAISS similarity index...")
             
             # Add to search index
             moment_id = take.id * 1000  # Simple moment ID
@@ -181,11 +233,11 @@ class ProcessingOrchestrator:
                 timing_data=timing_data
             )
             
-            self._progress[take.id]["logs"].append("Saving FAISS index to persistent storage...")
+            self._progress[take.id]["logs"].append(f"[{take.id}] Saving FAISS index to persistent storage...")
             # Save index
             semantic_search_service.save_index()
             
-            self._progress[take.id]["logs"].append("Intent indexing and search integration complete!")
+            self._progress[take.id]["logs"].append(f"[{take.id}] Intent indexing and search integration complete!")
             logger.info(f"Indexed take {take.id} for semantic search")
             return {"indexed": True, "moment_id": moment_id}
             

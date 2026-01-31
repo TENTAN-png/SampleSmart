@@ -43,9 +43,9 @@ class TakeCreate(TakeBase):
 class Take(TakeBase):
     id: int
     scene_id: int
-    confidence_score: float
-    ai_metadata: dict
-    ai_reasoning: dict
+    confidence_score: Optional[float] = 0.0
+    ai_metadata: Optional[dict] = {}
+    ai_reasoning: Optional[dict] = {}
     is_accepted: str
     editor_notes: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
